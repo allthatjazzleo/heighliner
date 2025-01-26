@@ -1,0 +1,60 @@
+name: Docker Build and Push
+# Build & Push builds the simapp docker image on every push to master
+# and pushes the image to https://hub.docker.com/u/provenanceio
+on:
+  workflow_dispatch:
+    inputs:
+      chain:
+        description: "The chain to build (e.g. mantrachain)."
+        required: true
+      chain_release_tag:
+        description: "The desired tag for the release (e.g. v0.1.0)."
+        required: true
+      chain_github_organization:
+        description: "The github organization for the chain (e.g. MANTRA-Chain)."
+        required: true
+      chain_github_repo:
+        description: "The github repo for the chain (e.g. mantrachain)."
+        required: true
+      additional-args:
+        description: "Additional arguments to pass to the build script."
+        required: false
+env:
+  REGISTRY: ghcr.io
+
+# Set concurrency for this workflow to cancel in-progress jobs if retriggered.
+# The github.ref is only available when triggered by a PR so fall back to github.run_id for other cases.
+# The github.run_id is unique for each run, giving each such invocation it's own unique concurrency group.
+# Basically, if you push to a PR branch, jobs that are still running for that PR will be cancelled.
+# But jobs started because of a merge to main or a release tag push are not cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  heighliner-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-qemu-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: set lower case owner name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
+      - uses: strangelove-ventures/heighliner-build-action@main
+        with:
+          chain: ${{ github.event.inputs.chain }}
+          heighliner-owner: strangelove-ventures
+          github-organization: ${{ github.event.inputs.chain_github_organization }}
+          github-repo: ${{ github.event.inputs.chain_github_repo }}
+          git-ref: ${{ github.event.inputs.chain_release_tag}}
+          registry: ghcr.io/${{ env.OWNER_LC }}
+          additional-args: ${{ github.event.inputs.additional-args }}
